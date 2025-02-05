@@ -1,9 +1,14 @@
+import json
+import os
+from typing import Annotated
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File
 from app.usecases.product_usecase import ProductUseCase
 from app.models.schemas.product_schema import ProductResponse
 from app.utils.auth_utils import get_current_user 
 import shutil
+
+from app.utils.gd_utils import upload_to_google_drive
 
 router = APIRouter()
 
@@ -17,14 +22,34 @@ async def preload_products():
     response = await ProductUseCase.preload_products(predefined_seller_ids)
     return response
 
+@router.post("/upload/")
+async def upload_product_file(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    if user["role"] != "seller":
+        raise HTTPException(status_code=403, detail="Only sellers can upload files")
+
+    file_path = f"temp/{file.filename}"
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    drive_link = await upload_to_google_drive(file_path, file.filename)
+    os.remove(file_path)  # Clean up local file
+
+    return {"message": "File uploaded successfully", "drive_link": drive_link}
+
 @router.post("/", response_model=ProductResponse)
-async def create_product(
-    product_data: dict, 
-    user: dict = Depends(get_current_user)  
-):
+async def create_product(file: UploadFile = File(...),
+    product_data: str = Form(...),  # Expecting JSON string
+    user: dict = Depends(get_current_user),):
     if user["role"] != "seller":
         raise HTTPException(status_code=403, detail="Only sellers can add products")
-    return await ProductUseCase.create_product(product_data, user["id"])
+
+    try:
+        print(f"Received product_data: {product_data}")  # Debugging
+        product_dict = json.loads(product_data)  # Convert string to dictionary
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format in product_data")
+
+    return await ProductUseCase.create_product(product_dict, file, user["id"])
 
 @router.put("/{product_id}")
 async def update_product(

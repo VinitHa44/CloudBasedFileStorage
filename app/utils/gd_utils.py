@@ -1,23 +1,31 @@
-from google.oauth2.service_account import Credentials
+import io
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-import os
+from googleapiclient.http import MediaIoBaseUpload
+from fastapi import HTTPException, UploadFile
 
-# Load credentials
+GDRIVE_CREDENTIALS_FILE = "book-api-449304-d524ed45764e.json"
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
-SERVICE_ACCOUNT_FILE = "first-kite-449304-d1-e12646d3069e.json"
+FOLDER_ID = "1o5YxUCI0ws85Lkj2gbHOtvZE07MK0RpO"
 
-credentials = Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=SCOPES
+credentials = service_account.Credentials.from_service_account_file(
+    GDRIVE_CREDENTIALS_FILE, scopes=SCOPES
 )
 drive_service = build("drive", "v3", credentials=credentials)
 
-async def upload_file_to_drive(file_path: str, file_name: str, folder_id: str = None):
-    file_metadata = {"name": file_name}
-    if folder_id:
-        file_metadata["parents"] = [folder_id]
 
-    media = MediaFileUpload(file_path, resumable=True)
-    file = drive_service.files().create(body=file_metadata, media_body=media, fields="id,webViewLink").execute()
-    
-    return file.get("webViewLink")  # Return file link
+async def upload_to_google_drive(file: UploadFile):
+    try:
+        file_metadata = {"name": file.filename, "parents": [FOLDER_ID]}
+        file_content = io.BytesIO(await file.read())  # Read file before passing
+
+        media = MediaIoBaseUpload(file_content, mimetype=file.content_type)
+        file_drive = (
+            drive_service.files()
+            .create(body=file_metadata, media_body=media, fields="id, webViewLink")
+            .execute()
+        )
+        return file_drive
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Google Drive upload failed: {str(e)}")
+

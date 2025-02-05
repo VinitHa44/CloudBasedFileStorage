@@ -15,17 +15,19 @@ class ProductRepository:
 
     @staticmethod
     async def create_product(product: Product):
-        result = await db.db["products"].insert_one(product.__dict__)
+        product_dict = product.__dict__
+        result = await db.db["products"].insert_one(product_dict)
+        
         created_product = await db.db["products"].find_one({"_id": result.inserted_id})
         
         if created_product:
-        # Convert MongoDB fields to match ProductResponse schema
             created_product["product_id"] = str(created_product.pop("_id"))  # Rename _id -> product_id
             created_product["seller_id"] = str(created_product["seller_id"])  # Convert ObjectId to string
 
-            return created_product  # Ensure it matches the expected schema
+            return created_product
         
         return None
+
 
     @staticmethod
     async def get_all_products():

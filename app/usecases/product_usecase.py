@@ -1,13 +1,13 @@
 from datetime import datetime
 import random
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 import httpx
 import requests
 from app.repositories.product_repository import ProductRepository
 from app.models.domain.product import Product
 from bson import ObjectId
 
-from app.utils.gd_utils import upload_file_to_drive
+from app.utils.gd_utils import upload_to_google_drive
 
 class ProductUseCase:
     DUMMYJSON_URL = "https://dummyjson.com/products"
@@ -64,21 +64,27 @@ class ProductUseCase:
 
 
     @staticmethod
-    async def create_product(product_data: dict, seller_id: str):
+    async def create_product(product_data: dict, file: UploadFile, seller_id: str):
         try:
-            # file_drive = await upload_file_to_drive(file)
-            # file_url = f"https://drive.google.com/file/d/{file_drive['id']}/view"
-            product_data["seller_id"] = ObjectId(seller_id)
+            file_drive = await upload_to_google_drive(file)
+            file_url = f"https://drive.google.com/file/d/{file_drive['id']}/view"
+
+            product_data["images"] = [file_url]  # Store image link
+            product_data["seller_id"] = ObjectId(seller_id)  # Convert to ObjectId
+
+            # Create Product instance before inserting into MongoDB
             product = Product(**product_data)
+
             created_product = await ProductRepository.create_product(product)
 
             if not created_product:
                 return {"error": "Failed to create product"}
 
             return created_product
-    
+
         except Exception as e:
-            raise HTTPException(status_code=500, detail="Internal Server Error")
+            raise HTTPException(status_code=500, detail=str(e))
+
         
     @staticmethod
     async def get_all_products():
